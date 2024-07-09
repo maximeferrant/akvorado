@@ -524,3 +524,38 @@ LIMIT 20`, "a").
 		},
 	})
 }
+
+func TestFilterCompletionBasedOnFilter(t *testing.T) {
+	_, h, mockConn, _ := NewMock(t, DefaultConfiguration())
+
+	mockConn.EXPECT().
+		Select(gomock.Any(), gomock.Any(), `
+SELECT ExporterName AS label
+FROM exporters
+WHERE positionCaseInsensitive(ExporterName, $1) >= 1
+GROUP BY ExporterName
+ORDER BY positionCaseInsensitive(ExporterName, $1) ASC, ExporterName ASC
+LIMIT 20`,
+			"th2-").
+		SetArg(1, []struct {
+			Label string `ch:"label"`
+		}{
+			{"th2-router1"},
+			{"th2-router2"},
+			{"th2-router3"},
+		}).
+		Return(nil)
+
+	helpers.TestHTTPEndpoints(t, h.LocalAddr(), helpers.HTTPEndpointCases{
+		{
+			URL:        "/api/v0/console/filter/complete",
+			StatusCode: 200,
+			JSONInput:  gin.H{"what": "value", "column": "exportername", "prefix": "th2-"},
+			JSONOutput: gin.H{"completions": []gin.H{
+				{"label": "th2-router1", "detail": "exporter name", "quoted": true},
+				{"label": "th2-router2", "detail": "exporter name", "quoted": true},
+				{"label": "th2-router3", "detail": "exporter name", "quoted": true},
+			}},
+		},
+	})
+}
